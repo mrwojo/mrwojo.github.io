@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Elevator Paradox</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300italic,700,700italic">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/normalize/3.0.3/normalize.css">
+    <link rel="stylesheet" href="css/milligram.min.css">
+    <link rel="stylesheet" href="css/mrwojo.css">
+    <script src="d3/d3.min.js" charset="utf-8"></script>
+</head>
+<body>
+
+<main>
+<div id="content">
+<h1>Elevator paradox, racetrack visualization</h1>
+
+<p>From Wikipedia "<a href="https://en.wikipedia.org/w/index.php?title=Elevator_paradox&amp;oldid=702582011#Modeling_the_elevator_problem">Elevator paradox</a>":</p>
+
+<blockquote>Another visualization [of the elevator paradox] is to imagine sitting in bleachers near one end of an oval racetrack: if you are waiting for a single car to pass in front of you, it will be more likely to pass on the straight-away before entering the turn.</blockquote>
+
+<p>This is a visualization of what I believe was meant by this statement.</p>
+
+<p>Below is an oval racetrack with a single racecar going around. The eyes represent "you". The cyan line represents "in front of you". The eyes look at the track at random times, and then they wait for the racecar to pass in front. Most of the time, the racecar will pass in the direction of entering the turn, similar to the other examples of the elevator paradox.</p>
+
+<svg id="stadium" width="600" height="300"></svg>
+
+<table>
+<tr>
+<td>Times entering the turn</td>
+<td><span id="cross-in">0</span></td>
+</tr>
+<tr>
+<td>Times exiting the turn</td>
+<td><span id="cross-out">0</span></td>
+</tr>
+</table>
+
+</div>
+
+<footer>
+<p>Mark Wojtowicz</p>
+</footer>
+</main>
+
+<script type="text/javascript">
+
+// TODO: canvas size, track size all dependent
+
+// A car that appears on the track.
+var Car = function() {
+    this.position = Math.random();
+    this.speed = 0.25;  // in revolutions per sec
+
+    // updates car position
+    this.update = function(dt) {
+        this.position += this.speed * dt;
+
+        // circular
+        if (this.position > 1) {
+            this.position -= 1;
+        }
+    };
+};
+
+var track = {
+    // track center position
+    cx: 300,
+    cy: 150,
+
+    // oval track semimajor/semiminor axes
+    majorRadius: 280,
+    minorRadius: 120,
+
+    // converts position t in range [0 1) to pixel coordinates on track
+    parametricPosition: function(t) {
+        return {
+            x: track.cx + track.majorRadius * Math.cos(2 * Math.PI * t),
+            y: track.cy + track.minorRadius * Math.sin(2 * Math.PI * t)
+        }
+    }
+};
+
+var sim = {
+    // delta time (per frame)
+    dt: 1 / 15,
+
+    // frame count
+    frame: 0,
+
+    // initialize the simulation
+    init: function() {
+        var stadiumElem = d3.select("#stadium");
+
+        // show track
+        var trackOval = stadiumElem.append("ellipse")
+                                    .attr("cx", track.cx)
+                                    .attr("cy", track.cy)
+                                    .attr("rx", track.majorRadius)
+                                    .attr("ry", track.minorRadius)
+                                    .attr("style", "fill:#567714;stroke:black;stroke-width:14");
+
+        // show eye position
+        var eyeGroup = stadiumElem.append("g").attr("id", "eye");
+        var eyeSymbol = eyeGroup.append("text")
+                                        .attr("x", sim.eyeX)
+                                        .attr("y", sim.eyeY)
+                                        .attr("text-anchor", "middle")
+                                        .attr("id", sim.eyeY)
+                                        .text("👀");
+        var eyeLine = eyeGroup.append("line")
+                                    .attr("x1", sim.eyeX)
+                                    .attr("y1", sim.eyeY)
+                                    .attr("x2", sim.eyeX)
+                                    .attr("y2", 300)
+                                    .attr("style", "stroke:#00F0FF;stroke-width:4;stroke-dasharray:4");
+        sim.activateEyes(false);
+
+        // create the cars
+        var n_cars = 1;
+        sim.cars = new Array();
+
+        for (var i = 0; i < n_cars; i++) {
+            sim.cars.push(new Car());
+
+            // circles represent cars
+            var pos = track.parametricPosition(sim.cars[i].position);
+
+            stadiumElem.append("circle")
+                         .attr("cx", pos.x)
+                         .attr("cy", pos.y)
+                         .attr("r", 5)
+                         .attr("style", "fill:none;stroke:orange;stroke-width:3")
+                         .attr("class", "car");
+        }
+    },
+
+    // is the viewer currently active?
+    eyeActive: false,
+
+    // viewer coordinates
+    eyeX: 500,
+    eyeY: 40,
+
+    // enable/disable the viewer
+    activateEyes: function(show) {
+        var eyes = d3.select("#eye");
+
+        sim.eyeActive = show;
+
+        if (show) {
+            eyes.attr("style", "opacity:1");
+        } else {
+            eyes.attr("style", "opacity:0.25");
+        }
+    },
+
+    // count the number of times the viewer sees the car entering, exiting the turn
+    carEnters: 0,
+    carExits: 0,
+
+    _updateCount: function() {
+        // originally had a chart, the numbers are just fine
+        d3.select("#cross-in").text(sim.carEnters);
+        d3.select("#cross-out").text(sim.carExits);
+    },
+
+    // called when viewer sees a car entering the turn
+    carEntered: function() {
+        sim.carEnters += 1;
+        sim._updateCount();
+    },
+
+    // called when viewer sees a car exiting the turn
+    carExited: function() {
+        sim.carExits += 1;
+        sim._updateCount();
+    },
+
+    // step the simulation
+    update: function() {
+        sim.frame += 1;
+
+        var carElems = d3.selectAll("#stadium .car")[0];
+
+        for (var i = 0; i < sim.cars.length; i++) {
+            var oldX = carElems[i].attributes.cx.value;
+
+            sim.cars[i].update(sim.dt);
+
+            // move cars on the track
+            pos = track.parametricPosition(sim.cars[i].position);
+            carElems[i].setAttribute("cx", pos.x);
+            carElems[i].setAttribute("cy", pos.y);
+
+            // did this car cross the viewer's eye line?
+            if (sim.eyeActive) {
+                if (oldX <= sim.eyeX && pos.x > sim.eyeX) {
+                    sim.carEntered();
+                    sim.activateEyes(false);
+                } else if (oldX >= sim.eyeX && pos.x < sim.eyeX) {
+                    sim.carExited();
+                    sim.activateEyes(false);
+                }
+            }
+        }
+
+        // Activate the viewer at random times.
+        if (Math.random() < (sim.dt / 2)) {
+            sim.activateEyes(true);
+        }
+
+        // Stop the simulation after a while.
+        if (sim.frame > 10000) {
+            clearInterval(sim._interval);
+        }
+    }
+};
+
+sim.init();
+sim._interval = setInterval(sim.update, sim.dt * 1000);
+
+</script>
+</body>
+</html>
